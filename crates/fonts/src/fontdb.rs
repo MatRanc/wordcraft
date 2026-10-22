@@ -1991,18 +1991,39 @@ mod tests {
         }
         let latin = db.face(FALLBACK_FAMILY, "Regular");
         let chars: Vec<char> = THAI_RUN.chars().filter(|c| !c.is_whitespace()).collect();
-        let f = db.fallback_for_run(&chars, latin.id(), false, false).expect("one face covers the run");
+        let Some(f) = db.fallback_for_run(&chars, latin.id(), false, false) else {
+            // Some systems' Thai fonts have no Latin (Fedora's Noto Sans Thai and Droid Sans
+            // Thai): then no single face covers the run and `None` is right (#3561). Any
+            // installed file that maps the whole run means the search missed it.
+            let maps_run = |path: &std::path::Path| {
+                read_fallback_file(path).is_some_and(|data| {
+                    let ranges = coverage_ranges(&data);
+                    chars.iter().all(|c| ranges_hold(&ranges, u32::from(*c)))
+                })
+            };
+            let missed: Vec<_> = db.read_catalog().iter().filter(|e| maps_run(&e.path)).map(|e| e.path.clone()).collect();
+            assert!(missed.is_empty(), "these installed fonts cover the run: {missed:?}");
+            eprintln!("skipped: no installed font covers the whole run");
+            return;
+        };
         assert_ne!(f.id, latin.id);
         for c in &chars {
             assert!(f.covers(*c), "{} covers {c}", f.family);
         }
         // A Thai font with OpenType tables, as the per-character fallback prefers.
         assert!(f.has_layout_tables(), "{} shapes Thai", f.family);
-        // Without system fonts no bundled face covers Thai: the caller keeps the per-character path.
+        // Without system fonts only a Thai face embedded from craft-fonts can cover the run (its
+        // Noto Sans Thai has Latin); without one the caller keeps the per-character path (#3561).
         let bundled = FontDb::with_font_dirs(Vec::new());
         bundled.set_system_fallback(false);
         let latin = bundled.face(FALLBACK_FAMILY, "Regular");
-        assert!(bundled.fallback_for_run(&chars, latin.id(), false, false).is_none());
+        let run = bundled.fallback_for_run(&chars, latin.id(), false, false);
+        if crate::CRAFT_FONTS.iter().any(|font| font.scripts.contains(&"Thai")) {
+            let f = run.expect("the embedded Thai face covers the run");
+            assert!(chars.iter().all(|c| f.covers(*c)), "{} covers the run", f.family);
+        } else {
+            assert!(run.is_none());
+        }
     }
 
     #[test]
