@@ -4303,9 +4303,11 @@ mod tests {
             h.step();
             h.output().platform_output.cursor_icon
         };
-        assert_ne!(pointer_after(&mut h, None), egui::CursorIcon::Copy, "no painter yet");
+        // Where the I-beam is drawn (Windows, #1746) the system pointer over the text is hidden.
+        let ibeam = if h.state().canvas.drawn_ibeam { egui::CursorIcon::None } else { egui::CursorIcon::Text };
+        assert_eq!(pointer_after(&mut h, None), ibeam, "no painter yet");
         assert_eq!(pointer_after(&mut h, Some("edit.formatPainter")), egui::CursorIcon::Copy, "armed");
-        assert_eq!(pointer_after(&mut h, Some("edit.formatPainter")), egui::CursorIcon::Text, "turned off");
+        assert_eq!(pointer_after(&mut h, Some("edit.formatPainter")), ibeam, "turned off");
         h.state_mut().run("edit.formatPainter", json!({})).unwrap();
         h.event(egui::Event::PointerMoved(over_bar));
         h.step();
