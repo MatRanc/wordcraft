@@ -912,6 +912,8 @@ fn drawing_grid_step(spacing: f32, scale: f32) -> f32 {
     step
 }
 
+/// Draw the document canvas in the space `ui` has left, one frame: the pages, caret, selection
+/// and rulers, with the mouse editing and the pointer shape over them.
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let full = ui.available_rect_before_wrap();
