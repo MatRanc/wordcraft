@@ -4273,7 +4273,7 @@ mod tests {
     }
 
     /// #3453: while the Format Painter is armed the pointer over the text says so, and it goes
-    /// back once the painter is off.
+    /// back once the painter is off. The selection bar keeps its arrow while it is armed.
     #[test]
     fn an_armed_format_painter_changes_the_pointer() {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
@@ -4292,6 +4292,7 @@ mod tests {
         }
         let c = h.state_mut().session.layout().caret(&Pos::body(0, 6)).expect("caret");
         let over_text = page_to_screen(h.state_mut(), c.page, c.x, c.top + c.height / 2.0).expect("on screen");
+        let over_bar = page_to_screen(h.state_mut(), c.page, 30.0, c.top + c.height / 2.0).expect("on screen");
         let pointer_after = |h: &mut egui_kittest::Harness<'_, WordApp>, cmd: Option<&str>| {
             if let Some(cmd) = cmd {
                 h.state_mut().run(cmd, json!({})).unwrap();
@@ -4303,6 +4304,10 @@ mod tests {
         assert_ne!(pointer_after(&mut h, None), egui::CursorIcon::Copy, "no painter yet");
         assert_eq!(pointer_after(&mut h, Some("edit.formatPainter")), egui::CursorIcon::Copy, "armed");
         assert_ne!(pointer_after(&mut h, Some("edit.formatPainter")), egui::CursorIcon::Copy, "turned off");
+        h.state_mut().run("edit.formatPainter", json!({})).unwrap();
+        h.event(egui::Event::PointerMoved(over_bar));
+        h.step();
+        assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Default, "the selection bar keeps its arrow");
     }
 
     /// #1085: a selected balloon's buttons work (pressing them is not a click on the page that
