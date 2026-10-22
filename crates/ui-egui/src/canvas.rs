@@ -1813,7 +1813,15 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         let in_bar = app.session.sel.focus.story == StoryRef::Body
             && (app.canvas.unit_drag.as_ref().is_some_and(|d| d.unit == "line")
                 || latest.and_then(|p| page_at(&rects, &layout, geo.scale, p)).is_some_and(|(pg, x, y)| layout.selection_bar_at(pg, x, y).is_some()));
-        let fallback = if in_bar { egui::CursorIcon::Default } else { egui::CursorIcon::Text };
+        // An armed Format Painter shows over the text, as Word's brush does; egui has no brush,
+        // so the copy pointer stands in (#3453).
+        let fallback = if app.session.painter.is_some() {
+            egui::CursorIcon::Copy
+        } else if in_bar {
+            egui::CursorIcon::Default
+        } else {
+            egui::CursorIcon::Text
+        };
         ui.ctx().set_cursor_icon(over_object.unwrap_or(fallback));
     }
     crate::table_resize::cursor(app, ui, &resp, &layout, &rects, geo.scale);
@@ -4262,6 +4270,39 @@ mod tests {
         h.event(Event::PointerMoved(at));
         h.step();
         assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Default);
+    }
+
+    /// #3453: while the Format Painter is armed the pointer over the text says so, and it goes
+    /// back once the painter is off.
+    #[test]
+    fn an_armed_format_painter_changes_the_pointer() {
+        let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        a.run("text.insert", json!({"text": "Paint this formatting"})).unwrap();
+        a.run("view.commentsPane", json!({"value": false})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        let c = h.state_mut().session.layout().caret(&Pos::body(0, 6)).expect("caret");
+        let over_text = page_to_screen(h.state_mut(), c.page, c.x, c.top + c.height / 2.0).expect("on screen");
+        let pointer_after = |h: &mut egui_kittest::Harness<'_, WordApp>, cmd: Option<&str>| {
+            if let Some(cmd) = cmd {
+                h.state_mut().run(cmd, json!({})).unwrap();
+            }
+            h.event(egui::Event::PointerMoved(over_text));
+            h.step();
+            h.output().platform_output.cursor_icon
+        };
+        assert_ne!(pointer_after(&mut h, None), egui::CursorIcon::Copy, "no painter yet");
+        assert_eq!(pointer_after(&mut h, Some("edit.formatPainter")), egui::CursorIcon::Copy, "armed");
+        assert_ne!(pointer_after(&mut h, Some("edit.formatPainter")), egui::CursorIcon::Copy, "turned off");
     }
 
     /// #1085: a selected balloon's buttons work (pressing them is not a click on the page that
